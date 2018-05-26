@@ -6,9 +6,9 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
-from NCryptoClient.UI.ui_contacts_list import UiContactsList
-from NCryptoClient.Utils.client_file_manager import ClientFileManager
-from NCryptoClient.Utils.constants import NCRYPTOLOGO_IMG_PATH, ADD_CONTACT_IMG_PATH, REMOVE_CONTACT_IMG_PATH
+from NCryptoClient.ui.ui_contacts_list import UiContactsList
+from NCryptoClient.utils.client_file_manager import ClientFileManager
+from NCryptoClient.utils.constants import NCRYPTOLOGO_IMG_PATH, ADD_CONTACT_IMG_PATH, REMOVE_CONTACT_IMG_PATH
 
 
 class UiMainWindow(QMainWindow):

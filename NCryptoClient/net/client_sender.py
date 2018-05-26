@@ -6,7 +6,7 @@ import time
 from threading import Thread
 from queue import Queue
 
-from NCryptoTools.Tools.utilities import send_msg, get_current_time
+from NCryptoTools.tools.utilities import get_current_time
 
 from NCryptoClient.client_instance_holder import client_holder
 
@@ -30,13 +30,13 @@ class Sender(Thread):
         self._output_buffer_queue = Queue(buffer_size)
         self._main_window = client_holder.get_instance('MainWindow')
 
-    def add_msg_to_queue(self, jim_msg):
+    def add_msg_to_queue(self, msg_bytes):
         """
         Stores new JSON-object in the outgoing queue.
-        @param jim_msg: JSON-object (message).
+        @param msg_bytes: serialized JSON-object (bytes).
         @return: -
         """
-        self._output_buffer_queue.put(jim_msg)
+        self._output_buffer_queue.put(msg_bytes)
 
     def run(self):
         """
@@ -44,13 +44,10 @@ class Sender(Thread):
         @return: -
         """
         while True:
-            # Proceeds sending only if the queue is not empty
             if self._output_buffer_queue.qsize() > 0:
-                jim_msg = self._output_buffer_queue.get()
-
+                msg_bytes = self._output_buffer_queue.get()
                 try:
-                    send_msg(self._socket, jim_msg)
+                    self._socket.send(msg_bytes)
                 except OSError as e:
                     self._main_window.add_data_in_tab('Log', '[{}] @NCryptoChat> {}'.format(get_current_time(), str(e)))
-
             time.sleep(self._wait_time)

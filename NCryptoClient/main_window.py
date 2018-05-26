@@ -8,13 +8,14 @@ import datetime
 
 from PyQt5.QtCore import pyqtSlot
 from PyQt5.QtWidgets import *
-from NCryptoTools.JIM.jim_base import JSONObjectType
-from NCryptoTools.JIM.jim import JIMManager
 
-from NCryptoClient.UI.ui_chat_tab import UiChat
-from NCryptoClient.UI.ui_server_settings_window import UiServerSettingsWindow
-from NCryptoClient.Transmitter.client_handler import MsgHandler
-from NCryptoClient.UI.ui_main_window import UiMainWindow
+from NCryptoTools.jim.jim_constants import JIMMsgType
+from NCryptoTools.jim.jim_core import JIMMessage
+
+from NCryptoClient.ui.ui_chat_tab import UiChat
+from NCryptoClient.ui.ui_server_settings_window import UiServerSettingsWindow
+from NCryptoClient.ui.ui_main_window import UiMainWindow
+from NCryptoClient.net.client_handler import MsgHandler
 
 
 class MainWindow(UiMainWindow):
@@ -54,8 +55,8 @@ class MainWindow(UiMainWindow):
         """
         # self._file_manager.save_changes()
 
-        quit_msg = JIMManager.create_jim_object(JSONObjectType.TO_SERVER_QUIT)
-        self.msg_handler.write_to_output_buffer(quit_msg.to_dict())
+        quit_msg = JIMMessage(JIMMsgType.CTS_QUIT, action='quit')
+        self.msg_handler.write_output_bytes(quit_msg.serialize())
         time.sleep(1)
 
         # args returns object of closing event
@@ -169,18 +170,18 @@ class MainWindow(UiMainWindow):
             if index is not None:
                 self.chat_tab_widget.add_tab_data_from_buffer(index)
 
-    def request_msg_history(self, chat_name):
-        """
-        Requests a list of messages from the server for the needed chat.
-        After returning the list, client_handler.py will renew GUI by adding
-        new messages.
-        @param chat_name: tab name (chat name).
-        @return: -
-        """
-        jim_msg = JIMManager.create_jim_object(JSONObjectType.TO_SERVER_GET_MSGS,
-                                               datetime.datetime.now().timestamp(),
-                                               self._login, chat_name)
-        self._client_transmitter.write_to_output_buffer(jim_msg.to_dict())
+    # def request_msg_history(self, chat_name):
+    #     """
+    #     Requests a list of messages from the server for the needed chat.
+    #     After returning the list, client_handler.py will renew GUI by adding
+    #     new messages.
+    #     @param chat_name: tab name (chat name).
+    #     @return: -
+    #     """
+    #     jim_msg = JIMManager.create_jim_object(JSONObjectType.TO_SERVER_GET_MSGS,
+    #                                            datetime.datetime.now().timestamp(),
+    #                                            self._login, chat_name)
+    #     self._client_transmitter.write_to_output_buffer(jim_msg.to_dict())
 
     # ========================================================================
     # Methods, related to the list of contacts.
@@ -212,9 +213,10 @@ class MainWindow(UiMainWindow):
         new contacts.
         @return: -
         """
-        jim_msg = JIMManager.create_jim_object(JSONObjectType.TO_SERVER_GET_CONTACTS,
-                                               datetime.datetime.now().timestamp())
-        self.msg_handler.write_to_output_buffer(jim_msg.to_dict())
+        jim_msg = JIMMessage(JIMMsgType.CTS_GET_CONTACTS,
+                             action='get_contacts',
+                             time=datetime.datetime.now().timestamp())
+        self.msg_handler.write_output_bytes(jim_msg.serialize())
 
     # ========================================================================
     # Methods, related to the server settings window.
@@ -274,11 +276,12 @@ class MainWindow(UiMainWindow):
                                   'Password length: {}. Expected length: [4;32]'.format(len(password)))
             return
 
-        auth_msg = JIMManager.create_jim_object(JSONObjectType.TO_SERVER_AUTH,
-                                                datetime.datetime.now().timestamp(),
-                                                self.login_le.text(),
-                                                self.password_le.text())
-        self.msg_handler.write_to_output_buffer(auth_msg.to_dict())
+        auth_msg = JIMMessage(JIMMsgType.CTS_AUTHENTICATE,
+                              action='authenticate',
+                              time=datetime.datetime.now().timestamp(),
+                              login=self.login_le.text(),
+                              password=self.password_le.text())
+        self.msg_handler.write_output_bytes(auth_msg.serialize())
 
     def clear_data(self):
         """
@@ -327,20 +330,20 @@ class MainWindow(UiMainWindow):
         self.request_contacts_list()
 
         # Signals
-        self.add_contact_pb.clicked.connect(self.find_and_add_contact)
-        self.remove_contact_pb.clicked.connect(self.find_and_remove_contact)
-        self.server_item.triggered.connect(self.open_server_settings_window)
-        self.exit_item.triggered.connect(self.close)
+        self.add_contact_pb.clicked.connect(self.find_and_add_contact)  # "Add" button
+        self.remove_contact_pb.clicked.connect(self.find_and_remove_contact)  # "Delete" button
+        self.server_item.triggered.connect(self.open_server_settings_window)  # Server settings item
+        self.exit_item.triggered.connect(self.close)  # "Exit" button
 
     def find_and_add_contact(self):
         """
         Searches for contacts and in case of a success adds them in the list.
         @return: -
         """
-        search_contact = self.search_le.text()
+        contact = self.search_le.text()
 
         re_message = re.compile('^(#[A-Za-z_\d]{3,31}|[A-Za-z_\d]{3,32})$')
-        if re.fullmatch(re_message, search_contact) is None:
+        if re.fullmatch(re_message, contact) is None:
             self.show_message_box('Incorrect input text!',
                                   'You have entered incorrect text! Requirements:\n' +
                                   '- Chatrooms. Length: [3,31], starts with \'#\'.\n' +
@@ -348,14 +351,14 @@ class MainWindow(UiMainWindow):
             return
 
         # Contact should not exist in the list to be able to add it
-        if self.contacts_widget.find_contact_widget(search_contact) is not None:
+        if self.contacts_widget.find_contact_widget(contact) is not None:
             self.show_message_box('Contact have not been found!',
-                                  'You already have \'{}\' in your list of contacts!'.format(search_contact))
+                                  'You already have \'{}\' in your list of contacts!'.format(contact))
             return
 
         question_mb = QMessageBox()
         question_mb.setIcon(QMessageBox.Question)
-        question_mb.setText('Do you really want to add \'{}\' to your list of contacts?'.format(search_contact))
+        question_mb.setText('Do you really want to add \'{}\' to your list of contacts?'.format(contact))
         question_mb.setWindowTitle('Proceed?')
         question_mb.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         result = question_mb.exec_()
@@ -364,15 +367,18 @@ class MainWindow(UiMainWindow):
             return
 
         # Checks what kind of contact we are trying to find: a chatroom or a person
-        if search_contact.startswith('#'):
-            msg = JIMManager.create_jim_object(JSONObjectType.TO_SERVER_JOIN_CHAT,
-                                               datetime.datetime.now().timestamp(),
-                                               self._login, search_contact)
+        if contact.startswith('#'):
+            msg = JIMMessage(JIMMsgType.CTS_JOIN_CHAT,
+                             action='join',
+                             time=datetime.datetime.now().timestamp(),
+                             login=self._login,
+                             room=contact)
         else:
-            msg = JIMManager.create_jim_object(JSONObjectType.TO_SERVER_ADD_CONTACT,
-                                               datetime.datetime.now().timestamp(),
-                                               search_contact)
-        self.msg_handler.write_to_output_buffer(msg.to_dict())
+            msg = JIMMessage(JIMMsgType.CTS_ADD_CONTACT,
+                             action='add_contact',
+                             time=datetime.datetime.now().timestamp(),
+                             login=contact)
+        self.msg_handler.write_output_bytes(msg.serialize())
 
     def find_and_remove_contact(self):
         """
@@ -381,14 +387,14 @@ class MainWindow(UiMainWindow):
         """
         self.remove_contact_by_login(self.search_le.text())
 
-    def remove_contact_by_login(self, contact_name):
+    def remove_contact_by_login(self, contact):
         """
         Searches for contact and and in case of a success deletes it from the list.
-        @param contact_name: contact name.
+        @param contact: contact name.
         @return:
         """
         re_message = re.compile('^(#[A-Za-z_\d]{3,31}|[A-Za-z_\d]{3,32})$')
-        if re.fullmatch(re_message, contact_name) is None:
+        if re.fullmatch(re_message, contact) is None:
             self.show_message_box('Incorrect input text!',
                                   'You have entered incorrect text! Requirements:\n' +
                                   '- Chatrooms. Length: [3,31], starts with \'#\'.\n' +
@@ -396,14 +402,14 @@ class MainWindow(UiMainWindow):
             return
 
         # Contact should be in our list to be deleted
-        if self.contacts_widget.find_contact_widget(contact_name) is None:
+        if self.contacts_widget.find_contact_widget(contact) is None:
             self.show_message_box('Contact have not been found!',
-                                  'You do not have \'{}\' in your list of contacts!'.format(contact_name))
+                                  'You do not have \'{}\' in your list of contacts!'.format(contact))
             return
 
         question_mb = QMessageBox()
         question_mb.setIcon(QMessageBox.Question)
-        question_mb.setText('Do you really want to remove \'{}\' from your list of contacts?'.format(contact_name))
+        question_mb.setText('Do you really want to remove \'{}\' from your list of contacts?'.format(contact))
         question_mb.setWindowTitle('Proceed?')
         question_mb.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         result = question_mb.exec_()
@@ -412,15 +418,18 @@ class MainWindow(UiMainWindow):
             return
 
         # Checks what kind of contact we are trying to find: a chatroom or a person
-        if contact_name.startswith('#'):
-            msg = JIMManager.create_jim_object(JSONObjectType.TO_SERVER_LEAVE_CHAT,
-                                               datetime.datetime.now().timestamp(),
-                                               self._login, contact_name)
+        if contact.startswith('#'):
+            msg = JIMMessage(JIMMsgType.CTS_LEAVE_CHAT,
+                             action='leave',
+                             time=datetime.datetime.now().timestamp(),
+                             login=self._login,
+                             room=contact)
         else:
-            msg = JIMManager.create_jim_object(JSONObjectType.TO_SERVER_DEL_CONTACT,
-                                               datetime.datetime.now().timestamp(),
-                                               contact_name)
-        self.msg_handler.write_to_output_buffer(msg.to_dict())
+            msg = JIMMessage(JIMMsgType.CTS_DEL_CONTACT,
+                             action='del_contact',
+                             time=datetime.datetime.now().timestamp(),
+                             login=contact)
+        self.msg_handler.write_output_bytes(msg.serialize())
 
     @pyqtSlot(str, str, name='show_message_box')
     def show_message_box(self, window_title, msg_text):

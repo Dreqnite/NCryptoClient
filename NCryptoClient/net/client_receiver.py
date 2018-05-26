@@ -6,7 +6,7 @@ import time
 from threading import Thread
 from queue import Queue
 
-from NCryptoTools.Tools.utilities import recv_msg, get_current_time
+from NCryptoTools.tools.utilities import get_current_time
 
 from NCryptoClient.client_instance_holder import client_holder
 
@@ -44,11 +44,10 @@ class Receiver(Thread):
         """
         while True:
             try:
-                msg_dict = recv_msg(self._socket)
+                msg_bytes = self._socket.recv(1024)
             except OSError as e:
                 self._main_window.add_data_in_tab('Log', '[{}] @NCryptoChat> {}'.format(get_current_time(), str(e)))
                 return
             else:
-                self._input_buffer_queue.put(msg_dict)
-
+                self._input_buffer_queue.put(msg_bytes)
             time.sleep(self._wait_time)

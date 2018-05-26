@@ -5,8 +5,8 @@ single instance of the file manager, we inherit it from Singleton metaclass.
 """
 import os
 
-from NCryptoTools.Tools.file_manager import IniFileManager
-from NCryptoTools.Tools.meta_singleton import Singleton
+from NCryptoTools.tools.file_manager import IniFileManager
+from NCryptoTools.tools.meta_singleton import Singleton
 
 
 class ClientFileManager(metaclass=Singleton):

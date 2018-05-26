@@ -9,11 +9,12 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
-from NCryptoTools.Tools.utilities import get_formatted_date
-from NCryptoTools.JIM.jim import JIMManager
-from NCryptoTools.JIM.jim_base import JSONObjectType
+from NCryptoTools.tools.utilities import get_formatted_date
+from NCryptoTools.jim.jim_constants import JIMMsgType
+from NCryptoTools.jim.jim_core import JIMMessage
 
-from NCryptoClient.Utils.constants import BOLD_IMG_PATH, ITALIC_IMG_PATH, UNDERLINED_IMG_PATH
+from NCryptoClient.utils.constants import BOLD_IMG_PATH, ITALIC_IMG_PATH, UNDERLINED_IMG_PATH
+
 
 class UiChat(QTabWidget):
     """
@@ -216,25 +217,20 @@ class UiChatTab(QWidget):
         if self._font.underline():
             msg_text = '<u>{}<u>'.format(msg_text)
 
-        recipient = self.tab_name
         login = self.parent.parent.get_login()
-        unix_time = datetime.datetime.now().timestamp()
-
-        # Message to the chatroom
-        if recipient.startswith('#'):
-            msg = JIMManager.create_jim_object(JSONObjectType.TO_SERVER_CHAT_MSG,
-                                               unix_time, recipient, login, msg_text)
-
-        # Personal message
+        current_time = datetime.datetime.now().timestamp()
+        if self.tab_name.startswith('#'):
+            msg = JIMMessage(JIMMsgType.CTS_CHAT_MSG, **{'action': 'msg', 'time': current_time,
+                                                         'to': self.tab_name, 'from': login,
+                                                         'message': msg_text})
         else:
-            msg = JIMManager.create_jim_object(JSONObjectType.TO_SERVER_PERSONAL_MSG,
-                                               unix_time, recipient, login, 'utf-8', msg_text)
+            msg = JIMMessage(JIMMsgType.CTS_PERSONAL_MSG, **{'action': 'msg', 'time': current_time,
+                                                             'to': self.tab_name, 'from': login,
+                                                             'encoding': 'utf-8', 'message': msg_text})
 
-        self.parent.parent.msg_handler.write_to_output_buffer(msg.to_dict())
+        self.parent.parent.msg_handler.write_output_bytes(msg.serialize())
 
-        time = '[{}] @{}> '.format(get_formatted_date(unix_time), login)
-
-        # Adds time and message in the internal buffer (in the queue)
+        time = '[{}] @{}> '.format(get_formatted_date(current_time), login)
         self._message_queue.put((time, msg_text))
 
     def set_bold(self):
@@ -274,7 +270,6 @@ class UiChatTab(QWidget):
 
         # Takes the first message from the queue
         (time, message) = self._message_queue.get()
-
         self.add_data(time, message)
 
     def add_data(self, time, message):

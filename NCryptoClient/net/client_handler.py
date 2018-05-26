@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Модуль для обработчика входящих сообщений.
+Module which handles messages.
 """
 import re
 import time
 import socket
 
 from PyQt5.QtCore import *
-from NCryptoTools.Tools.utilities import get_formatted_date, get_current_time
-from NCryptoTools.JIM.jim import JIMManager
-from NCryptoTools.JIM.jim_base import JSONObjectType, UnknownJSONObjectType
+from NCryptoTools.tools.utilities import get_formatted_date, get_current_time
+from NCryptoTools.jim.jim_constants import JIMMsgType, HTTPCode
+from NCryptoTools.jim.jim_core import to_dict, type_of, is_valid_msg
 
 from NCryptoClient.client_instance_holder import client_holder
-from NCryptoClient.Transmitter.client_receiver import Receiver
-from NCryptoClient.Transmitter.client_sender import Sender
+from NCryptoClient.net.client_receiver import Receiver
+from NCryptoClient.net.client_sender import Sender
 
 
 class MsgHandler(QThread):
@@ -33,14 +33,12 @@ class MsgHandler(QThread):
     show_message_box_signal = pyqtSignal(str, str)
     open_chat_signal = pyqtSignal()
 
-    def __init__(self,
-                 ipv4_address,
-                 port_number,
+    def __init__(self, ipv4_address, port_number,
                  socket_family=socket.AF_INET,
                  socket_type=socket.SOCK_STREAM,
                  wait_time=0.05):
         """
-        Конструктор.
+        Constructor.
         @param ipv4_address: IPv4 address of server.
         @param port_number: port number.
         @param socket_family: socket family.
@@ -59,14 +57,14 @@ class MsgHandler(QThread):
     def __del__(self):
         """
         Destructor. Closes the connection with the server.
-        @return: -
+        @return: None.
         """
         self._socket.close()
 
     def run(self):
         """
         Runs thread routine.
-        @return: -
+        @return: None.
         """
         self._main_window = client_holder.get_instance('MainWindow')
 
@@ -74,68 +72,59 @@ class MsgHandler(QThread):
         self._receiver.start()
 
         while True:
-            msg_dict = self._receiver.pop_msg_from_queue()
-            if msg_dict is not None:
-                self._handle_message(msg_dict)
+            msg_bytes = self._receiver.pop_msg_from_queue()
+            if msg_bytes is not None:
+                self._handle_message(to_dict(msg_bytes))
             time.sleep(self._wait_time)
 
-    def write_to_output_buffer(self, msg_dict):
+    def write_output_bytes(self, msg_bytes):
         """
-        Writes JSON-object to the output buffer of the Sender thread.
-        @param msg_dict: JSON-object. (message).
-        @return: -
+        Writes bytes to the output buffer of the Sender thread.
+        @param msg_bytes: serialized JSON-object. (bytes).
+        @return: None.
         """
-        self._sender.add_msg_to_queue(msg_dict)
+        self._sender.add_msg_to_queue(msg_bytes)
 
     def _handle_message(self, msg_dict):
         """
         Handles input messages and performs actions depending on the
         message type.
         @param msg_dict: JSON-object. (message).
-        @return: -
+        @return: None.
         """
-        try:
-            json_object_type = JIMManager.determine_jim_msg_type(msg_dict)
-        except UnknownJSONObjectType:
+        jim_msg_type = type_of(msg_dict)
+        if jim_msg_type == JIMMsgType.UNDEFINED_TYPE or is_valid_msg(jim_msg_type, msg_dict) is False:
             return
 
-        # User wrote personal message to the current client
-        if json_object_type == JSONObjectType.TO_SERVER_PERSONAL_MSG:
-            self._server_to_client_personal_msg(msg_dict)
+        if jim_msg_type == JIMMsgType.CTS_PERSONAL_MSG:
+            self._handle_personal_msg(msg_dict)
 
-        # Server sent information, that another user has written a message to the chatroom
-        elif json_object_type == JSONObjectType.TO_SERVER_CHAT_MSG:
-            self._server_to_client_chat_msg(msg_dict)
+        elif jim_msg_type == JIMMsgType.CTS_CHAT_MSG:
+            self._handle_chat_msg(msg_dict)
 
-        # Server sent information, that another user joined the chatroom
-        elif json_object_type == JSONObjectType.TO_SERVER_JOIN_CHAT:
-            self._server_to_client_join_chat(msg_dict)
+        elif jim_msg_type == JIMMsgType.CTS_JOIN_CHAT:
+            self._handle_join_chat_msg(msg_dict)
 
-        # Server sent information, that another user left the chatroom
-        elif json_object_type == JSONObjectType.TO_SERVER_LEAVE_CHAT:
-            self._server_to_client_leave_chat(msg_dict)
+        elif jim_msg_type == JIMMsgType.CTS_LEAVE_CHAT:
+            self._handle_leave_chat_msg(msg_dict)
 
-        # Server sent information about the amount of contacts in the client's list
-        elif json_object_type == JSONObjectType.TO_CLIENT_QUANTITY:
-            self._server_to_client_quantity(msg_dict)
+        elif jim_msg_type == JIMMsgType.STC_QUANTITY:
+            self._handle_quantity_msg(msg_dict)
 
-        # Server sent information about the next client in the client's list
-        elif json_object_type == JSONObjectType.TO_CLIENT_CONTACT_LIST:
-            self._server_to_client_contact_list(msg_dict)
+        elif jim_msg_type == JIMMsgType.STC_CONTACTS_LIST:
+            self._handle_contacts_list_msg(msg_dict)
 
-        # Server sent an ordinary answer to the client regarding his previous action
-        elif json_object_type == JSONObjectType.TO_CLIENT_INFO:
-            self._server_to_client_alert(msg_dict)
+        elif jim_msg_type == JIMMsgType.STC_ALERT:
+            self._handle_alert_msg(msg_dict)
 
-        # Server sent a error/critical message
-        elif json_object_type == JSONObjectType.TO_CLIENT_ERROR:
-            self._server_to_client_error(msg_dict)
+        elif jim_msg_type == JIMMsgType.STC_ERROR:
+            self._handle_error_msg(msg_dict)
 
     # ========================================================================
     # A group of protected methods, each of which is charge of message handling
     # of a specific type.
     # ========================================================================
-    def _server_to_client_personal_msg(self, msg_dict):
+    def _handle_personal_msg(self, msg_dict):
         """
         Handles personal message from a client.
         @param msg_dict: JSON-object. (message).
@@ -145,7 +134,7 @@ class MsgHandler(QThread):
                                       msg_dict['from'])
         self.add_message_signal.emit(msg_dict['from'], time_str, msg_dict['message'])
 
-    def _server_to_client_chat_msg(self, msg_dict):
+    def _handle_chat_msg(self, msg_dict):
         """
         Handles message to the chat from a client.
         @param msg_dict: JSON-object. (message).
@@ -155,7 +144,7 @@ class MsgHandler(QThread):
                                       msg_dict['from'])
         self.add_message_signal.emit(msg_dict['to'], time_str, msg_dict['message'])
 
-    def _server_to_client_join_chat(self, msg_dict):
+    def _handle_join_chat_msg(self, msg_dict):
         """
         Handles message from the server that another client has joined a chatroom.
         @param msg_dict: JSON-object. (message).
@@ -166,7 +155,7 @@ class MsgHandler(QThread):
                                                      msg_dict['room'])
         self.add_message_signal.emit(msg_dict['room'], time_str, msg_string)
 
-    def _server_to_client_leave_chat(self, msg_dict):
+    def _handle_leave_chat_msg(self, msg_dict):
         """
         Handles message from the server that another client has left a chatroom.
         @param msg_dict: JSON-object. (message).
@@ -177,7 +166,7 @@ class MsgHandler(QThread):
                                                    msg_dict['room'])
         self.add_message_signal.emit(msg_dict['room'], time_str, msg_string)
 
-    def _server_to_client_quantity(self, msg_dict):
+    def _handle_quantity_msg(self, msg_dict):
         """
         Handles message with amount of contacts of the current client.
         @param msg_dict: JSON-object. (message).
@@ -187,7 +176,7 @@ class MsgHandler(QThread):
         alert_msg = 'Amount of contacts: {}'.format(msg_dict['quantity'])
         self.add_log_signal.emit(time_str, alert_msg)
 
-    def _server_to_client_contact_list(self, msg_dict):
+    def _handle_contacts_list_msg(self, msg_dict):
         """
         Handles message with the next login of client's contact.
         @param msg_dict: JSON-object. (message).
@@ -195,7 +184,7 @@ class MsgHandler(QThread):
         """
         self.add_contact_signal.emit(msg_dict['login'])
 
-    def _server_to_client_alert(self, msg_dict):
+    def _handle_alert_msg(self, msg_dict):
         """
         Handles an ordinary answer from the server (response).
         @param msg_dict: JSON-object. (message).
@@ -215,11 +204,11 @@ class MsgHandler(QThread):
 
             # if user is not logged in, checks the code
             else:
-                if msg_dict['response'] == 200:
+                if msg_dict['response'] == HTTPCode.OK:
                     self._main_window.set_auth_state(True)
                     self.open_chat_signal.emit()
 
-    def _server_to_client_error(self, msg_dict):
+    def _handle_error_msg(self, msg_dict):
         """
         Handles error message from the server (response).
         @param msg_dict: JSON-object. (message).
@@ -236,7 +225,7 @@ class MsgHandler(QThread):
 
             # if user is not logged in, checks the code
             else:
-                if msg_dict['response'] == 401:
+                if msg_dict['response'] == HTTPCode.UNAUTHORIZED:
                     self.show_message_box_signal.emit('Invalid authentication data!',
                                                       'Authentication has failed! Try again!')
                 else:

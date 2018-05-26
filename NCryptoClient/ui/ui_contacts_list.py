@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Module for the list of contacts (Widget).
 """
@@ -37,7 +36,6 @@ class UiContactsList(QListWidget):
         @param kwargs: additional parameters (dictionary).
         @return: -
         """
-        # print('Keyboard click event:', self._last_keyboard_event.key())
         self._last_keyboard_event = args[0]
 
     def mousePressEvent(self, *args, **kwargs):
@@ -47,7 +45,6 @@ class UiContactsList(QListWidget):
         @param kwargs: additional parameters (dictionary).
         @return: -
         """
-        # print('Mouse click event:', self._last_mouse_event.button())
         self._last_mouse_event = args[0]
 
     def add_contact(self, chat_name):
@@ -75,7 +72,6 @@ class UiContactsList(QListWidget):
         # Opens chat tab when mouse left button is being pressed
         contact.clicked.connect(lambda _, local_contact_name=chat_name:
                                 self._main_window.open_tab(local_contact_name))
-
         self.addItem(item)
         self.setItemWidget(item, contact)
 
@@ -101,14 +97,13 @@ class UiContactsList(QListWidget):
         """
         contacts_amount = self.count()
         if contacts_amount == 1:
-            if self.itemWidget(self.item(0)).text() == chat_name:
+            if self.itemWidget(self.item(0)).contact_name.text() == chat_name:
                 return 0
-            return None
-
-        for i in range(0, contacts_amount):
-            widget = self.itemWidget(self.item(i))
-            if widget.text() == chat_name:
-                return i
+        else:
+            for i in range(0, contacts_amount):
+                widget = self.itemWidget(self.item(i))
+                if widget.contact_name.text() == chat_name:
+                    return i
         return None
 
     def show_context_menu(self, chat_name):
